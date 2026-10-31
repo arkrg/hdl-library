@@ -3,31 +3,18 @@ module uart_bdgen (
 );
   wire rst = uif_b.rst;
   wire clk = uif_b.clk;
-  logic [15:0] COUNT_LIMIT;
+  wire enable = (uif_b.cfg_divisor != 0);
+  wire [15:0] COUNT_LIMIT = uif_b.cfg_divisor;
   logic [15:0] c_count, n_count;
-  logic baud_tick;
 
-  assign COUNT_LIMIT = uif_b.cfg_divisor;
-  assign uif_b.baud_tick = baud_tick;
   always_ff @(posedge clk or posedge rst) begin
-    if (rst) begin
-      c_count <= 0;
-    end else begin
-      if (COUNT_LIMIT != 0 & COUNT_LIMIT != 1) c_count <= n_count;
+    if (rst) c_count <= 0;
+    else begin
+      if (enable) c_count <= n_count;
     end
   end
-  always_comb begin
-    n_count = c_count;
-    if (c_count == COUNT_LIMIT - 1) begin
-      n_count = 0;
-    end else begin
-      n_count = c_count + 1;
-    end
-  end
+  always_comb n_count = (enable) & (COUNT_LIMIT - 1 == c_count) ? 0 : c_count + 1;
 
-  always_comb begin
-    if (COUNT_LIMIT == 0) baud_tick = 0;
-    else if (COUNT_LIMIT == 1) baud_tick = clk;
-    else baud_tick = (c_count == COUNT_LIMIT - 1);
-  end
+  assign uif_b.baud_tick = (enable) & (COUNT_LIMIT - 1 == c_count);
+
 endmodule
