@@ -4,18 +4,6 @@
 // ------------------------------------------------------------------
 // WARNING: [XSIM 43-4477] Line 46 : Delay Control inside Assertion action block is not supported
 // WARNING: [XSIM 43-4127] Line 43 : The "System Verilog Assertion" is not supported yet for simulation. The statement will be iupport 
-// property p_stable_zero_divisor;
-//   @(posedge clk iff (!rst) & (divisor == 0)) $stable(
-//       dut.c_count
-//   );
-// endproperty
-// assert_zero_divisor :
-// assert property (p_stable_zero_divisor)
-// else begin
-//   $error(" ===== internal counter changed. =====");
-//   #10;
-//   $finish;
-// end
 // ------------------------------------------------------------------
 class divisor_item;
   rand shortint divisor;
@@ -30,9 +18,19 @@ module tb_uart_bdgen;
   parameter int MIN_BDR = 9600;
   shortint divisor;
   logic rst, clk;
-
+  // Clock and Reset
   initial clk = 0;
   always #5 clk <= ~clk;
+  initial reset();
+  task automatic reset();
+    begin
+      rst <= 1;
+      divisor <= 0;
+      repeat (2) @(posedge clk);
+      rst <= 0;
+    end
+  endtask
+
 
   uart_int_if uif (
       .clk,
@@ -42,7 +40,6 @@ module tb_uart_bdgen;
   assign uif.cfg_divisor = divisor;
 
   initial begin
-    reset();
     $display("===== Start! =====");
     repeat (4) begin
       sel_divisor(SYS_FREQ);
@@ -53,33 +50,44 @@ module tb_uart_bdgen;
     $finish;
   end
 
+  property p_keep_zero;
+    @(posedge clk) (sig == 0) |-> $stable(
+        sig
+    );
+  endproperty
 
-  task automatic reset();
-    begin
-      rst <= 1;
-      divisor <= 0;
-      repeat (2) @(posedge clk);
-      rst <= 0;
-    end
-  endtask
   task automatic sel_divisor(int SYS_FREQ);
     divisor_item item;
     begin
       item = new();
       if (!item.randomize() with {
             baudrate inside {9600, 12500};
-            divisor inside {[0 : 3], SYS_FREQ / baudrate};
+            divisor inside {[0 : 3], SYS_FREQ / baudrate / OSR};
           })
         $error("Randomization Failed.");
       divisor = item.divisor;
       $display("--- Testing divisor = %d ---", item.divisor);
     end
   endtask
+
   task automatic meas_bdrate(int SYS_FREQ, int MIN_BDR);
     shortint meas = 0;
     wait (rst == 0);
     if (divisor < 2) begin
-      repeat (SYS_FREQ / MIN_BDR) @(posedge clk);
+      repeat (SYS_FREQ / MIN_BDR / OSR) @(posedge clk);
+      assert property (p_keep_zero) @(posedge clk);
+      // property p_stable_zero_divisor;
+      //   @(posedge clk iff (!rst) & (divisor == 0)) $stable(
+      //       dut.c_count
+      //   );
+      // endproperty
+      // assert_zero_divisor :
+      // assert property (p_stable_zero_divisor)
+      // else begin
+      //   $error(" ===== internal counter changed. =====");
+      //   #10;
+      //   $finish;
+      // end
     end else begin
       fork
         begin
